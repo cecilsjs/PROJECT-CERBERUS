@@ -158,3 +158,124 @@ The architecture separates detection into three security domains before correlat
                            v
                  SECURITY OPERATIONS
                       DASHBOARD
+
+
+```
+
+## Detection & Risk Scoring Logic
+
+CERBERUS uses risk-based detection rather than relying on a single binary alert. Each detection domain evaluates different security signals and assigns a numerical risk score based on the observed behavior.
+
+The DEAD HAND correlation engine then combines those domain scores into an overall CERBERUS incident score.
+
+### GHOST Identity Risk
+
+GHOST evaluates authentication activity for indicators of potential account compromise.
+
+Risk is increased when CERBERUS observes:
+
+- Multiple failed authentication attempts
+- Authentication involving an unusual or monitored workstation
+- Authentication occurring during off-hours
+
+During the simulated attack, GHOST identified suspicious authentication activity associated with `j.smith` and `HR-WS-01`.
+
+**Observed GHOST Risk: `65`**
+
+This represented the strongest individual signal in the incident and mapped the activity to:
+
+- **MITRE ATT&CK Tactic:** Credential Access
+- **Technique:** Password Guessing
+- **Technique ID:** `T1110.001`
+- **Mapping Confidence:** HIGH
+
+### Endpoint Risk
+
+The endpoint detection engine evaluates process execution and parent-child process relationships.
+
+CERBERUS specifically scores suspicious command execution behavior, including:
+
+- Command Prompt execution
+- PowerShell execution
+- Suspicious parent-child process relationships
+
+The simulated attack produced:
+
+`excel.exe → powershell.exe`
+
+This behavior resulted in:
+
+**Observed Endpoint Risk: `50`**
+
+The activity was mapped to:
+
+- **MITRE ATT&CK Tactic:** Execution
+- **Technique:** PowerShell
+- **Technique ID:** `T1059.001`
+- **Mapping Confidence:** HIGH
+
+### Network Risk
+
+The network detection engine evaluates connections to sensitive infrastructure and suspicious protocol usage.
+
+During the simulated attack, CERBERUS observed SMB communication from `HR-WS-01` to the domain controller `DC-01` over port `445`.
+
+This resulted in:
+
+**Observed Network Risk: `45`**
+
+The activity was mapped to:
+
+- **MITRE ATT&CK Tactic:** Lateral Movement
+- **Technique:** SMB/Windows Admin Shares
+- **Technique ID:** `T1021.002`
+- **Mapping Confidence:** MEDIUM
+
+### Weighted Cross-Domain Scoring
+
+DEAD HAND does not simply add the three raw domain scores together.
+
+Instead, CERBERUS applies weighting to each security domain so that different classes of telemetry contribute proportionally to the final incident score.
+
+For the correlated attack sequence, the domain scores were:
+
+| Security Domain | Raw Risk Score |
+|---|---:|
+| GHOST Identity | 65 |
+| Endpoint | 50 |
+| Network | 45 |
+
+The weighted domain scores are then combined before correlation logic is applied.
+
+### Correlation Bonus
+
+CERBERUS becomes more sensitive when suspicious behavior appears across multiple security domains within the same investigation window.
+
+When identity, endpoint, and network risk are all elevated within the **15-minute user-centric transaction window**, DEAD HAND applies a:
+
+**Correlation Bonus: `+20`**
+
+This represents increased confidence that the individual detections are related components of the same attack rather than unrelated security events.
+
+### Final CERBERUS Score
+
+For the simulated attack, DEAD HAND correlated:
+
+`Credential Access → Execution → Lateral Movement`
+
+with the attack progression:
+
+`Password Guessing → PowerShell → SMB/Windows Admin Shares`
+
+The correlation engine produced the final result:
+
+| Component | Result |
+|---|---:|
+| GHOST Risk | 65 |
+| Endpoint Risk | 50 |
+| Network Risk | 45 |
+| Correlation Bonus | +20 |
+| **Final CERBERUS Score** | **74** |
+| **Incident Status** | **HIGH** |
+
+The final score demonstrates the central concept behind PROJECT CERBERUS: **security signals that may appear moderate in isolation can represent a substantially higher-risk incident when correlated across identity, endpoint, and network telemetry.**
