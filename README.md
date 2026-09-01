@@ -110,3 +110,51 @@ DEAD HAND correlates the signals within a **15-minute user-centric transaction w
 `GHOST 65 + Endpoint 50 + Network 45 + Correlation Bonus 20 → CERBERUS Score 74 (HIGH)`
 
 This allows CERBERUS to elevate a sequence of individually suspicious events into a single cross-domain security incident.
+
+## System Architecture
+
+PROJECT CERBERUS uses a layered detection and correlation architecture designed to simulate how a Security Operations Center (SOC) can transform raw security telemetry into a prioritized security incident.
+
+The architecture separates detection into three security domains before correlating the results through the DEAD HAND correlation engine.
+
+```text
+                    PROJECT CERBERUS
+
+                  RAW SECURITY TELEMETRY
+                           |
+          +----------------+----------------+
+          |                |                |
+          v                v                v
+   AUTHENTICATION       ENDPOINT          NETWORK
+       EVENTS            EVENTS            EVENTS
+          |                |                |
+          v                v                v
+   +-------------+   +-------------+   +-------------+
+   |    GHOST    |   |  ENDPOINT   |   |   NETWORK   |
+   |  Identity   |   |    Risk     |   |    Risk     |
+   | Detection   |   | Detection   |   | Detection   |
+   +-------------+   +-------------+   +-------------+
+          |                |                |
+          | ghost_risk     | endpoint_risk  | network_risk
+          |                |                |
+          +----------------+----------------+
+                           |
+                           v
+                 +-------------------+
+                 |     DEAD HAND     |
+                 | Correlation Engine|
+                 +-------------------+
+                           |
+                           v
+                   CERBERUS RISK SCORE
+                           |
+                           v
+                  INCIDENT SEVERITY
+                           |
+                           v
+                    MITRE ATT&CK
+                       MAPPING
+                           |
+                           v
+                 SECURITY OPERATIONS
+                      DASHBOARD
