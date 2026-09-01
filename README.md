@@ -279,3 +279,210 @@ The correlation engine produced the final result:
 | **Incident Status** | **HIGH** |
 
 The final score demonstrates the central concept behind PROJECT CERBERUS: **security signals that may appear moderate in isolation can represent a substantially higher-risk incident when correlated across identity, endpoint, and network telemetry.**
+
+
+### DEAD HAND SPL Implementation
+
+The full DEAD HAND correlation logic is available in:
+
+[`detections/dead_hand_correlation.spl`](detections/dead_hand_correlation.spl)
+
+DEAD HAND uses Splunk Search Processing Language (SPL) to correlate security telemetry, calculate cross-domain risk, and dynamically construct a MITRE ATT&CK attack path.
+
+#### 1. Temporal Correlation
+
+DEAD HAND begins by grouping events associated with the same user into a maximum 15-minute investigation window:
+
+```spl
+| transaction user maxspan=15m
+```
+
+This allows CERBERUS to correlate authentication, endpoint, and network events that occur at different timestamps but may belong to the same security incident.
+
+For the simulated incident, DEAD HAND correlated **11 events** associated with `j.smith` across the 15-minute window.
+
+#### 2. Multivalue Detection
+
+The `transaction` command can produce multivalue fields when multiple events contain different values for the same field.
+
+DEAD HAND therefore uses `mvfind()` to determine whether specific security indicators are present anywhere within the correlated transaction.
+
+Examples include:
+
+```spl
+mvfind(process, "powershell.exe") >= 0
+mvfind(parent_process, "excel.exe") >= 0
+mvfind(destination, "DC-01") >= 0
+mvfind(protocol, "SMB") >= 0
+```
+
+This allows CERBERUS to evaluate endpoint and network indicators across the complete correlated event set rather than requiring all suspicious activity to occur at an identical timestamp.
+
+#### 3. Domain Risk Calculation
+
+After correlation, DEAD HAND calculates risk independently across the identity, endpoint, and network domains.
+
+Examples of evaluated indicators include:
+
+**Identity**
+- Repeated failed authentication attempts
+- Activity associated with `HR-WS-01`
+- Off-hours authentication
+
+**Endpoint**
+- `cmd.exe` execution
+- `powershell.exe` execution
+- `excel.exe → powershell.exe` parent-child execution
+
+**Network**
+- Connections to `FIN-SRV-01`
+- Connections to `DC-01`
+- SMB activity involving `DC-01`
+
+This produces the three domain risk values used by the correlation engine:
+
+```text
+ghost_risk
+endpoint_risk
+network_risk
+```
+
+#### 4. Weighted Risk Correlation
+
+DEAD HAND applies weighting to each detection domain:
+
+```spl
+| eval weighted_ghost=ghost_risk * 0.35
+| eval weighted_endpoint=endpoint_risk * 0.35
+| eval weighted_network=network_risk * 0.30
+```
+
+The weighting model assigns:
+
+- **35%** to identity risk
+- **35%** to endpoint risk
+- **30%** to network risk
+
+This prevents the final incident score from being calculated as a simple sum of independent detection scores.
+
+#### 5. Cross-Domain Correlation Bonus
+
+DEAD HAND evaluates whether all three detection domains have reached the correlation threshold:
+
+```spl
+| eval correlation_bonus=if(
+    ghost_risk >= 40
+    AND endpoint_risk >= 40
+    AND network_risk >= 40,
+    20,
+    0
+)
+```
+
+When all three domains reach a risk score of at least `40`, CERBERUS adds a **20-point correlation bonus**.
+
+The bonus represents the increased significance of suspicious activity appearing across identity, endpoint, and network telemetry within the same user-centric investigation window.
+
+#### 6. Final Incident Scoring
+
+The weighted domain scores and correlation bonus are combined into the final CERBERUS score:
+
+```spl
+| eval cerberus_score=weighted_ghost + weighted_endpoint + weighted_network + correlation_bonus
+```
+
+DEAD HAND then assigns an incident status:
+
+```spl
+| eval cerberus_status=case(
+    cerberus_score >= 75, "CRITICAL",
+    cerberus_score >= 60, "HIGH",
+    cerberus_score >= 40, "MONITOR",
+    true(), "LOW"
+)
+```
+
+The current severity model is:
+
+| CERBERUS Score | Status |
+|---:|---|
+| 75+ | CRITICAL |
+| 60–74.99 | HIGH |
+| 40–59.99 | MONITOR |
+| Below 40 | LOW |
+
+The simulated incident produced a score of `73.75`, displayed as **74**, resulting in a **HIGH** incident status.
+
+#### 7. Dynamic MITRE ATT&CK Enrichment
+
+DEAD HAND does not statically assign every ATT&CK technique to every incident.
+
+Instead, ATT&CK techniques are added only when their corresponding detection domain crosses the risk threshold:
+
+```spl
+| eval ghost_mitre=if(ghost_risk >= 40, "T1110.001", null())
+| eval endpoint_mitre=if(endpoint_risk >= 40, "T1059.001", null())
+| eval network_mitre=if(network_risk >= 40, "T1021.002", null())
+```
+
+The resulting techniques are combined using `mvappend()` and `mvjoin()` to dynamically construct the detected attack progression.
+
+For the simulated incident, CERBERUS generated:
+
+```text
+Credential Access → Execution → Lateral Movement
+
+T1110.001 → T1059.001 → T1021.002
+
+Password Guessing → PowerShell → SMB/Windows Admin Shares
+```
+
+This means the ATT&CK path displayed by CERBERUS is derived from the detection domains that actually triggered rather than being a static dashboard label.
+
+---
+
+## MITRE ATT&CK Mapping & Detection Rationale
+
+CERBERUS maps detected behaviors to MITRE ATT&CK based on the telemetry available to each detection engine. Mapping confidence is used to distinguish strongly supported mappings from mappings where the available telemetry has limitations.
+
+| Detection | Tactic | Technique | Technique ID | Confidence |
+|---|---|---|---|---|
+| GHOST Identity | Credential Access | Password Guessing | `T1110.001` | HIGH |
+| Endpoint | Execution | PowerShell | `T1059.001` | HIGH |
+| Network | Lateral Movement | SMB/Windows Admin Shares | `T1021.002` | MEDIUM |
+
+### GHOST — Password Guessing
+
+GHOST identifies repeated failed authentication attempts associated with a user account.
+
+Repeated authentication failures can indicate attempts to systematically guess a valid password, aligning the observed behavior with the **Credential Access** tactic and **Password Guessing (`T1110.001`)** sub-technique.
+
+The mapping is assigned **HIGH confidence** because the authentication telemetry directly provides evidence of repeated failed login activity.
+
+### Endpoint — PowerShell
+
+The Endpoint engine identifies PowerShell execution and assigns additional risk when `powershell.exe` is spawned by an unusual parent process such as `excel.exe`.
+
+PowerShell provides a command and scripting environment that can be used to execute commands and scripts, aligning the observed behavior with the **Execution** tactic and **PowerShell (`T1059.001`)** sub-technique.
+
+The mapping is assigned **HIGH confidence** because the endpoint telemetry directly identifies `powershell.exe` execution.
+
+### Network — SMB/Windows Admin Shares
+
+The Network engine identifies SMB activity directed toward an internal system such as `DC-01`.
+
+SMB can support remote access and lateral movement between Windows systems, making the observed behavior consistent with **SMB/Windows Admin Shares (`T1021.002`)**.
+
+However, the available telemetry does not directly establish access to a specific administrative share such as `ADMIN$` or `C$`.
+
+For this reason, CERBERUS assigns the mapping **MEDIUM confidence** rather than treating T1021.002 as definitively confirmed.
+
+### DEAD HAND — Cross-Domain ATT&CK Correlation
+
+DEAD HAND correlates identity, endpoint, and network detections associated with the same user within a defined 15-minute window.
+
+Rather than treating each signal independently, the correlation engine identifies a progression consistent with:
+
+**Credential Access → Execution → Lateral Movement**
+
+ATT&CK mappings are dynamically generated so that only techniques associated with detection domains that actually triggered are included in the resulting attack path.
