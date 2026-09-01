@@ -486,3 +486,125 @@ Rather than treating each signal independently, the correlation engine identifie
 **Credential Access → Execution → Lateral Movement**
 
 ATT&CK mappings are dynamically generated so that only techniques associated with detection domains that actually triggered are included in the resulting attack path.
+
+---
+
+## Dashboard & Investigation Evidence
+
+The CERBERUS Security Operations dashboard presents the correlated incident from both a risk-scoring and analyst-investigation perspective.
+
+The dashboard combines:
+
+- Enterprise threat scoring
+- Incident severity
+- GHOST identity risk
+- Endpoint risk
+- Network risk
+- Dynamic MITRE ATT&CK progression
+- Authentication evidence
+- Endpoint process evidence
+- Network evidence
+
+### Final CERBERUS Security Operations Dashboard
+
+![CERBERUS Security Operations Dashboard](screenshots/05-cerberus-security-operations-dashboard.png)
+
+The final dashboard shows:
+
+- **CERBERUS Enterprise Threat Score:** 74
+- **Incident Status:** HIGH
+- **GHOST Risk:** 65
+- **Endpoint Risk:** 50
+- **Network Risk:** 45
+- **ATT&CK Progression:** Credential Access → Execution → Lateral Movement
+- **Technique Chain:** `T1110.001 → T1059.001 → T1021.002`
+
+The lower investigation panels preserve the underlying evidence that contributed to the correlated incident.
+
+---
+
+## Detection Evidence
+
+### 1. GHOST Identity Detection
+
+![GHOST Identity Detection](screenshots/01-ghost-identity-detection.png)
+
+GHOST identified suspicious authentication activity associated with `j.smith`, including:
+
+- `failed_logins = 5`
+- `HR-WS-01`
+- Off-hours authentication
+- Identity risk score of **65**
+- Status of **HIGH**
+- MITRE ATT&CK mapping to `T1110.001 — Password Guessing`
+
+This screenshot demonstrates the identity detection stage before cross-domain correlation occurs.
+
+### 2. Endpoint PowerShell Detection
+
+![Endpoint PowerShell Detection](screenshots/02-endpoint-powershell-detection.png)
+
+The Endpoint engine identified:
+
+`excel.exe → powershell.exe`
+
+The resulting detection produced:
+
+- Endpoint risk score of **50**
+- Status of **MONITOR**
+- ATT&CK tactic: **Execution**
+- Technique: **PowerShell**
+- Technique ID: `T1059.001`
+- Mapping confidence: **HIGH**
+
+The screenshot demonstrates how process telemetry is transformed into an ATT&CK-enriched endpoint detection.
+
+### 3. Network SMB Detection
+
+![Network SMB Detection](screenshots/03-network-smb-detection.png)
+
+The Network engine identified:
+
+`HR-WS-01 → DC-01 → SMB`
+
+The detection produced:
+
+- Network risk score of **45**
+- Status of **MONITOR**
+- ATT&CK tactic: **Lateral Movement**
+- Technique: **SMB/Windows Admin Shares**
+- Technique ID: `T1021.002`
+- Mapping confidence: **MEDIUM**
+
+The MEDIUM confidence reflects the limitation that SMB communication is visible, but direct access to a specific administrative share such as `ADMIN$` or `C$` is not explicitly confirmed in the available telemetry.
+
+### 4. DEAD HAND Correlation Engine
+
+![DEAD HAND Correlation Engine](screenshots/04-dead-hand-correlation.png)
+
+DEAD HAND correlated **11 events** associated with `j.smith` inside a 15-minute transaction window.
+
+The correlated transaction produced:
+
+| Component | Result |
+|---|---:|
+| GHOST Risk | 65 |
+| Endpoint Risk | 50 |
+| Network Risk | 45 |
+| Correlation Bonus | +20 |
+| CERBERUS Score | 74 |
+| Incident Status | HIGH |
+
+The same transaction dynamically generated:
+
+```text
+Credential Access → Execution → Lateral Movement
+
+T1110.001 → T1059.001 → T1021.002
+
+Password Guessing → PowerShell → SMB/Windows Admin Shares
+```
+
+This screenshot demonstrates the central thesis of PROJECT CERBERUS:
+
+**Correlation > isolated detection.**
