@@ -608,3 +608,252 @@ Password Guessing → PowerShell → SMB/Windows Admin Shares
 This screenshot demonstrates the central thesis of PROJECT CERBERUS:
 
 **Correlation > isolated detection.**
+
+---
+
+## Detection Limitations
+
+PROJECT CERBERUS is a controlled detection-engineering simulation and intentionally operates with a simplified telemetry model. The detections demonstrate correlation and risk-scoring concepts, but several limitations would need to be addressed in a production Security Operations Center (SOC).
+
+### Identity Detection Limitations
+
+GHOST currently evaluates authentication risk using indicators such as failed login volume, workstation association, and authentication time.
+
+Current limitations include:
+
+- Fixed risk thresholds rather than dynamically learned user baselines
+- No geographic or impossible-travel analysis
+- No source IP reputation enrichment
+- No Multi-Factor Authentication (MFA) telemetry
+- No Active Directory or identity-provider context
+- No distinction between expected administrative activity and anomalous user behavior
+
+A production implementation could incorporate historical authentication baselines and identity context to improve detection precision.
+
+### Endpoint Detection Limitations
+
+The Endpoint engine evaluates process names and parent-child relationships but does not inspect full command-line activity.
+
+For example:
+
+`excel.exe → powershell.exe`
+
+is suspicious and receives additional risk, but PowerShell execution alone does not establish malicious intent.
+
+Additional endpoint telemetry could include:
+
+- Full process command lines
+- PowerShell Script Block Logging
+- Process hashes
+- Digital signature information
+- Endpoint Detection and Response (EDR) telemetry
+- File creation and modification activity
+- Network connections associated with processes
+
+These data sources would provide additional context for determining whether execution was malicious or legitimate.
+
+### Network Detection Limitations
+
+The Network engine identifies suspicious destinations and SMB activity but has limited visibility into the actual SMB operation performed.
+
+For example:
+
+`HR-WS-01 → DC-01 → SMB`
+
+supports investigation of potential lateral movement, but it does not independently prove that an administrative share was accessed.
+
+This is why the `T1021.002 — SMB/Windows Admin Shares` mapping is assigned **MEDIUM** confidence.
+
+Additional telemetry such as Windows share-access events, firewall logs, network flow data, or packet-level evidence could increase mapping confidence.
+
+### Correlation Limitations
+
+DEAD HAND currently uses:
+
+```spl
+| transaction user maxspan=15m
+```
+
+This provides an effective demonstration of user-centric temporal correlation but has several production limitations.
+
+At larger scale, `transaction` can become computationally expensive because Splunk must retain and group events before producing results.
+
+A production implementation could instead use:
+
+- `stats`
+- `eventstats`
+- Time-bucketed aggregation
+- Summary indexing
+- Data models
+- Risk-based alerting
+- Scheduled correlation searches
+
+The 15-minute correlation window is also a fixed design choice for this simulation. A production system would tune correlation windows based on the behavior being detected.
+
+---
+
+## Repository Structure
+
+```text
+PROJECT-CERBERUS/
+│
+├── detections/
+│   ├── ghost_identity_detection.spl
+│   ├── endpoint_risk_detection.spl
+│   ├── network_risk_detection.spl
+│   └── dead_hand_correlation.spl
+│
+├── screenshots/
+│   ├── 01-ghost-identity-detection.png
+│   ├── 02-endpoint-powershell-detection.png
+│   ├── 03-network-smb-detection.png
+│   ├── 04-dead-hand-correlation.png
+│   └── 05-cerberus-security-operations-dashboard.png
+│
+└── README.md
+```
+
+The repository separates detection logic from investigation evidence so that the SPL implementation can be reviewed independently from the resulting detections and dashboard output.
+
+---
+
+## Skills Demonstrated
+
+PROJECT CERBERUS demonstrates practical experience across several areas of defensive security and detection engineering.
+
+### Splunk & SPL
+
+- Splunk Search Processing Language (SPL)
+- Event searching and field analysis
+- `eval`-based detection logic
+- Conditional scoring with `if()` and `case()`
+- Multivalue field analysis with `mvfind()`
+- Multivalue construction with `mvappend()`
+- Multivalue formatting with `mvjoin()`
+- User-centric event correlation with `transaction`
+- Risk scoring and severity classification
+- Dashboard development
+
+### Detection Engineering
+
+- Behavior-based detection design
+- Multi-signal detection
+- Risk-based detection
+- Detection threshold development
+- Identity risk analysis
+- Endpoint process analysis
+- Network activity analysis
+- Cross-domain event correlation
+- Detection confidence assessment
+- False-positive and telemetry limitation analysis
+
+### Security Operations
+
+- Authentication investigation
+- Suspicious process investigation
+- Network activity investigation
+- Incident prioritization
+- Cross-domain telemetry analysis
+- Security event correlation
+- Analyst-oriented dashboard design
+- Evidence-driven incident reconstruction
+
+### MITRE ATT&CK
+
+- ATT&CK tactic mapping
+- ATT&CK technique mapping
+- Detection-to-technique alignment
+- Mapping confidence assessment
+- Dynamic attack-chain construction
+
+The simulated incident demonstrates detection and correlation across:
+
+```text
+Credential Access
+      ↓
+Execution
+      ↓
+Lateral Movement
+```
+
+with the corresponding techniques:
+
+```text
+T1110.001
+Password Guessing
+      ↓
+T1059.001
+PowerShell
+      ↓
+T1021.002
+SMB/Windows Admin Shares
+```
+
+---
+
+## Future Improvements
+
+PROJECT CERBERUS could be expanded into a more production-oriented detection architecture by introducing additional telemetry, enrichment, and correlation capabilities.
+
+Potential improvements include:
+
+- Replace `transaction` with scalable `stats`-based correlation
+- Introduce user and host behavioral baselines
+- Add source IP and threat-intelligence enrichment
+- Incorporate Windows Event Log telemetry
+- Add PowerShell Script Block Logging
+- Integrate Sysmon process and network telemetry
+- Incorporate Endpoint Detection and Response (EDR) data
+- Add DNS telemetry
+- Add firewall and network-flow telemetry
+- Develop additional ATT&CK-aligned detections
+- Add risk decay so older activity contributes less to current incident severity
+- Introduce host-centric and asset-centric correlation in addition to user-centric correlation
+- Add privileged-account and critical-asset weighting
+- Create scheduled correlation searches and alerting
+- Add analyst disposition fields for true positive, false positive, and benign positive classifications
+- Measure detection performance using false-positive rates and detection coverage
+
+A larger implementation could also separate the individual detection engines from the correlation layer and treat CERBERUS as a centralized risk aggregation system consuming detections from multiple security tools.
+
+---
+
+## Project Conclusion
+
+PROJECT CERBERUS was built to explore a fundamental detection-engineering problem:
+
+**How can multiple moderate security signals be combined to identify a higher-risk incident that may not be obvious from any individual alert?**
+
+The project approaches this problem through four layers:
+
+```text
+Security Telemetry
+        ↓
+Domain Detection
+        ↓
+Risk Scoring
+        ↓
+Cross-Domain Correlation
+        ↓
+Incident Prioritization
+```
+
+GHOST analyzes authentication behavior.
+
+The Endpoint engine analyzes suspicious process execution.
+
+The Network engine analyzes suspicious internal communication.
+
+DEAD HAND correlates those independent detections within a shared user-centric investigation window and produces a weighted CERBERUS risk score.
+
+In the simulated attack, individually moderate signals were correlated into the progression:
+
+`Password Guessing → PowerShell → SMB/Windows Admin Shares`
+
+mapped across:
+
+`Credential Access → Execution → Lateral Movement`
+
+The resulting **CERBERUS score of 74** elevated the activity to a **HIGH-priority incident**.
+
+PROJECT CERBERUS demonstrates how risk-based correlation can reduce dependence on isolated alerts and provide analysts with a more complete representation of suspicious activity occurring across identity, endpoint, and network telemetry.
