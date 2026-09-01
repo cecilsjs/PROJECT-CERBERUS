@@ -1,0 +1,17 @@
+index=cerberus
+| eval login_hour=tonumber(strftime(strptime(timestamp, "%Y-%m-%d %H:%M:%S"), "%H"))
+| eval ghost_risk=if(failed_logins >= 5, 20, 0)
+| eval ghost_risk=ghost_risk + if(extracted_host="HR-WS-01", 25, 0)
+| eval ghost_risk=ghost_risk + if(login_hour < 8, 20, 0)
+| eval ghost_status=case(
+    ghost_risk >= 75, "CRITICAL",
+    ghost_risk >= 60, "HIGH",
+    ghost_risk >= 40, "MONITOR",
+    true(), "LOW"
+)
+| where ghost_risk >= 40
+| eval mitre_tactic="Credential Access",
+       mitre_technique="Password Guessing",
+       mitre_technique_id="T1110.001",
+       mapping_confidence="HIGH"
+| table timestamp user extracted_host failed_logins login_hour ghost_risk ghost_status mitre_tactic mitre_technique mitre_technique_id mapping_confidence
