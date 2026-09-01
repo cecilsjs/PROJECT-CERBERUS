@@ -1,0 +1,20 @@
+index=cerberus source="*network_events.csv"
+| eval network_risk=if(destination="FIN-SRV-01", 10, 0)
+| eval network_risk=network_risk + if(destination="DC-01", 20, 0)
+| eval network_risk=network_risk + if(
+    protocol="SMB" AND destination="DC-01",
+    25,
+    0
+)
+| eval network_status=case(
+    network_risk >= 75, "CRITICAL",
+    network_risk >= 60, "HIGH",
+    network_risk >= 40, "MONITOR",
+    true(), "LOW"
+)
+| where network_risk >= 40
+| eval mitre_tactic="Lateral Movement",
+       mitre_technique="SMB/Windows Admin Shares",
+       mitre_technique_id="T1021.002",
+       mapping_confidence="MEDIUM"
+| table timestamp user source_host destination protocol network_risk network_status mitre_tactic mitre_technique mitre_technique_id mapping_confidence
